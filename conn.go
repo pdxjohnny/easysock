@@ -45,7 +45,8 @@ func (c *connection) readPump() {
 		Hub.unregister <- c
 		c.ws.Close()
 	}()
-	c.ws.SetReadLimit(maxMessageSize)
+	// Read any length
+	c.ws.SetReadLimit(0)
 	c.ws.SetReadDeadline(time.Now().Add(pongWait))
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
