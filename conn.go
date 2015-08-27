@@ -6,8 +6,6 @@ package easysock
 
 import (
 	"github.com/gorilla/websocket"
-	"log"
-	"net/http"
 	"time"
 )
 
@@ -30,19 +28,22 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-// connection is an middleman between the websocket connection and the hub.
-type connection struct {
-	// The websocket connection.
+// Connection is an middleman between the websocket Connection and the hub.
+type Connection struct {
+	// The websocket Connection.
 	ws *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan []byte
+	Send chan []byte
+
+	// Anything anyone wants to store
+	Data interface{}
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-func (c *connection) readPump() {
+// readPump pumps messages from the websocket Connection to the hub.
+func (c *Connection) readPump() {
 	defer func() {
-		Hub.unregister <- c
+		Hub.Unregister <- c
 		c.ws.Close()
 	}()
 	// Read any length
@@ -54,18 +55,18 @@ func (c *connection) readPump() {
 		if err != nil {
 			break
 		}
-		Hub.broadcast <- message
+		Hub.Broadcast <- message
 	}
 }
 
 // write writes a message with the given message type and payload.
-func (c *connection) write(mt int, payload []byte) error {
+func (c *Connection) write(mt int, payload []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.ws.WriteMessage(mt, payload)
 }
 
-// writePump pumps messages from the hub to the websocket connection.
-func (c *connection) writePump() {
+// writePump pumps messages from the hub to the websocket Connection.
+func (c *Connection) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -73,7 +74,7 @@ func (c *connection) writePump() {
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message, ok := <-c.Send:
 			if !ok {
 				c.write(websocket.CloseMessage, []byte{})
 				return
@@ -87,21 +88,4 @@ func (c *connection) writePump() {
 			}
 		}
 	}
-}
-
-// serverWs handles websocket requests from the peer.
-func ServeWs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", 405)
-		return
-	}
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	c := &connection{send: make(chan []byte, 256), ws: ws}
-	Hub.register <- c
-	go c.writePump()
-	c.readPump()
 }
